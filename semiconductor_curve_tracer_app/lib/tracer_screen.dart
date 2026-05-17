@@ -212,11 +212,13 @@ class _TracerScreenState extends State<TracerScreen> {
                                 sideTitles: SideTitles(showTitles: false),
                               ),
                               bottomTitles: AxisTitles(
-                                axisNameWidget: const Padding(
-                                  padding: EdgeInsets.only(top: 8.0),
+                                axisNameWidget: Padding(
+                                  padding: const EdgeInsets.only(top: 8.0),
                                   child: Text(
-                                    "Collector-Emitter Voltage (Vce) [Volts]",
-                                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                                    chartTitle.contains("MOSFET")
+                                        ? "Drain-Source Voltage (Vds) [Volts]"
+                                        : "Collector-Emitter Voltage (Vce) [Volts]",
+                                    style: const TextStyle(color: Colors.white70, fontSize: 12),
                                   ),
                                 ),
                                 axisNameSize: 30,
@@ -235,9 +237,11 @@ class _TracerScreenState extends State<TracerScreen> {
                                 ),
                               ),
                               leftTitles: AxisTitles(
-                                axisNameWidget: const Text(
-                                  "Collector Current (Ic) [mA]",
-                                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                                axisNameWidget: Text(
+                                  chartTitle.contains("MOSFET")
+                                      ? "Drain Current (Id) [mA]"
+                                      : "Collector Current (Ic) [mA]",
+                                  style: const TextStyle(color: Colors.white70, fontSize: 12),
                                 ),
                                 axisNameSize: 24,
                                 sideTitles: SideTitles(
@@ -373,9 +377,9 @@ class _TracerScreenState extends State<TracerScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            "Base Drive",
-            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+          Text(
+            chartTitle.contains("MOSFET") ? "Gate Drive" : "Base Drive",
+            style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 4),
           for (int i = 0; i < 5; i++)
