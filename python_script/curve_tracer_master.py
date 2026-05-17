@@ -7,109 +7,150 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 # --- CONFIGURATION ---
-COM_PORT = 'COM4' 
+COM_PORT = 'COM4'  
 BAUD_RATE = 115200
 
 # --- 1. GUI COMPONENT SELECTOR ---
 def get_target_file():
-    selected_file, component_name, trigger_char = None, None, None
+    selected_file = None
+    component_name = None
+    trigger_char = None
+
     def choose_bjt():
         nonlocal selected_file, component_name, trigger_char
-        selected_file, component_name, trigger_char = 'bjt_output_data.csv', 'BJT', b'B\n'
+        selected_file = 'bjt_output_data.csv'
+        component_name = 'BJT'
+        trigger_char = b'B' 
         root.destroy()
+
     def choose_mosfet():
         nonlocal selected_file, component_name, trigger_char
-        selected_file, component_name, trigger_char = 'mosfet_output_data.csv', 'MOSFET', b'M\n'
+        selected_file = 'mosfet_output_data.csv'
+        component_name = 'MOSFET'
+        trigger_char = b'M' 
         root.destroy()
 
     root = tk.Tk()
-    root.title("NSUT Curve Tracer - Final")
-    root.geometry("400x180")
+    root.title("Curve Tracer - Run Test")
+    root.geometry("380x150")
     root.eval('tk::PlaceWindow . center')
-    tk.Label(root, text="Select Component in Socket:", font=("Segoe UI", 12, "bold")).pack(pady=15)
+    root.attributes('-topmost', True)
+
+    tk.Label(root, text="Select the component in the Test Socket:", font=("Segoe UI", 11)).pack(pady=20)
     btn_frame = tk.Frame(root)
     btn_frame.pack()
-    tk.Button(btn_frame, text="BJT (2N3904)", command=choose_bjt, width=18, height=2, bg="#007acc", fg="white").pack(side=tk.LEFT, padx=10)
-    tk.Button(btn_frame, text="MOSFET", command=choose_mosfet, width=18, height=2, bg="#d9534f", fg="white").pack(side=tk.RIGHT, padx=10)
+    tk.Button(btn_frame, text="BJT (2N3904)", command=choose_bjt, width=15, bg="#007acc", fg="white").pack(side=tk.LEFT, padx=10)
+    tk.Button(btn_frame, text="MOSFET", command=choose_mosfet, width=15, bg="#d9534f", fg="white").pack(side=tk.RIGHT, padx=10)
     root.mainloop()
+    
     return selected_file, component_name, trigger_char
 
 OUTPUT_FILE, COMP_NAME, TRIGGER_CHAR = get_target_file()
-if not OUTPUT_FILE: sys.exit()
+if not OUTPUT_FILE:
+    print("❌ Cancelled.")
+    sys.exit()
 
-# --- 2. ROBUST DATA LOGGING ---
+# --- 2. AUTOMATED DATA LOGGING ---
 print(f"🔌 Connecting to {COM_PORT}...")
 try:
     ser = serial.Serial(COM_PORT, BAUD_RATE, timeout=2)
-    ser.setDTR(False)
     time.sleep(2) 
     ser.reset_input_buffer()
     
-    print(f"🚀 Sweeping {COMP_NAME}...")
+    print(f"🚀 Instructing hardware to test {COMP_NAME}...")
     ser.write(TRIGGER_CHAR) 
     ser.flush()
     
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
-        f.write("Curve_Num,DAC1_Val,DAC2_Val,Raw_ADC\n")
+        recording = False
         while True:
             if ser.in_waiting > 0:
                 line = ser.readline().decode('utf-8', errors='ignore').strip()
-                if not line or "Curve_Num" in line: continue
                 
                 if "--- SWEEP COMPLETE ---" in line:
                     print("🎉 Sweep Finished!")
                     break
                 
-                if line.count(',') == 3:
+                if "Curve_Num" in line:
+                    recording = True
+                    print("📊 Receiving Data...")
                     f.write(line + '\n')
-                    f.flush()
+                elif recording:
+                    f.write(line + '\n')
+                    
     ser.close()
 except Exception as e:
-    print(f"❌ SERIAL ERROR: {e}"); sys.exit()
+    print(f"❌ ERROR: {e}")
+    sys.exit()
 
-# --- 3. TRANSIMPEDANCE MATH ---
-print("📈 Processing Data...")
+# --- 3. AUTOMATED PLOTTING ---
+print("📈 Plotting curves...")
+
 df = pd.read_csv(OUTPUT_FILE)
-df = df.apply(pd.to_numeric, errors='coerce').dropna()
+df = df.apply(pd.to_numeric, errors='coerce').dropna() 
 
-# Convert ADC bits to Output Voltage (V_out)
-df['V_Out_Volts'] = (df['Raw_ADC'] / 4095.0) * 3.3
+df['ADS1115_mV'] = pd.to_numeric(df['ADS1115_mV'])
+df['DAC2_Val'] = pd.to_numeric(df['DAC2_Val'])
 
-# Convert DAC2 steps to Sweep Voltage (V_sweep)
-df['V_Sweep_Volts'] = (df['DAC2_Val'] / 255.0) * 3.15 
+df['V_Sweep_Volts'] = (df['DAC2_Val'] / 255.0) * 3.3
+df['V_Sweep_mV'] = df['V_Sweep_Volts'] * 1000.0
 
-# Calculate Current through 1k Ohm Resistor (I = V/R)
-# Because R is 1000 Ohms, the voltage difference directly equals current in mA!
-df['Current_mA'] = df['V_Out_Volts'] - df['V_Sweep_Volts']
+# Calculate voltage drop across the 1 kOhm resistor
+df['Voltage_Drop_mV'] = df['ADS1115_mV'] - df['V_Sweep_mV']
 
 # Filter noise
-df.loc[df['Current_mA'] < 0, 'Current_mA'] = 0.0
+df.loc[df['Voltage_Drop_mV'] < 0, 'Voltage_Drop_mV'] = 0.0 
 
-# --- 4. ANIMATED PLOTTING ---
+# Math for 1 kOhm Resistor: Current in mA
+df['Current_mA'] = df['Voltage_Drop_mV'] / 1000.0
+
+# Dynamic Labels
+if "MOSFET" in COMP_NAME:
+    y_label = 'Drain Current ($I_D$) [mA]' # Back to mA
+    x_label = 'Drain-Source Voltage ($V_{DS}$) [Volts]'
+    legend_title = "Gate Drive"
+else:
+    y_label = 'Collector Current ($I_C$) [mA]' # Back to mA
+    x_label = 'Collector-Emitter Voltage ($V_{CE}$) [Volts]'
+    legend_title = "Base Drive"
+
+# Setup the Figure
 fig, ax = plt.subplots(figsize=(10, 6))
-ax.set_title(f'{COMP_NAME} Characteristic Curves', fontsize=16, fontweight='bold')
-ax.grid(True, linestyle="--", alpha=0.5)
+fig.canvas.manager.set_window_title(f'{COMP_NAME} Test Results')
 
-ax.set_xlabel('Collector-Emitter Voltage ($V_{CE}$) [V]' if 'BJT' in COMP_NAME else 'Drain-Source Voltage ($V_{DS}$) [V]', fontsize=12)
-ax.set_ylabel('Collector Current ($I_C$) [mA]' if 'BJT' in COMP_NAME else 'Drain Current ($I_D$) [mA]', fontsize=12)
+ax.set_title(f'{COMP_NAME} Output Characteristics', fontsize=16, fontweight='bold')
+ax.set_xlabel(x_label, fontsize=12)
+ax.set_ylabel(y_label, fontsize=12)
+ax.grid(True, linestyle="--", alpha=0.7)
 
-# Dynamic Y-axis
-y_max = df['Current_mA'].max() if df['Current_mA'].max() > 0.1 else 2.0
-ax.set_ylim(0, y_max * 1.1)
 ax.set_xlim(0, df['V_Sweep_Volts'].max() * 1.05)
+ax.set_ylim(0, df['Current_mA'].max() * 1.1)
 
 curves = df['Curve_Num'].unique()
-lines = [ax.plot([], [], lw=2.5, label=f'Step {int(c)}')[0] for c in curves]
-ax.legend(title="Base Drive" if 'BJT' in COMP_NAME else "Gate Drive", loc='upper left')
+lines = []
+for curve in curves:
+    line, = ax.plot([], [], linewidth=2, label=f'Step {int(curve)}')
+    lines.append(line)
+
+ax.legend(title=legend_title)
+plt.tight_layout()
+
+max_points = df.groupby('Curve_Num').size().max() if not df.empty else 100
+
+def init():
+    for line in lines:
+        line.set_data([], [])
+    return lines
 
 def update(frame):
     for i, curve in enumerate(curves):
-        c_data = df[df['Curve_Num'] == curve]
-        if frame < len(c_data):
-            x = c_data['V_Sweep_Volts'].iloc[:frame]
-            y = c_data['Current_mA'].iloc[:frame]
-            lines[i].set_data(x, y)
+        curve_data = df[df['Curve_Num'] == curve]
+        x_data = curve_data['V_Sweep_Volts'].iloc[:frame]
+        y_data = curve_data['Current_mA'].iloc[:frame]
+        lines[i].set_data(x_data, y_data)
     return lines
 
-ani = animation.FuncAnimation(fig, update, frames=len(df[df['Curve_Num'] == 1]) + 5, interval=15, blit=True, repeat=False)
+ani = animation.FuncAnimation(fig, update, frames=max_points + 5,
+                              init_func=init, blit=True, interval=15, repeat=False)
+
 plt.show()
