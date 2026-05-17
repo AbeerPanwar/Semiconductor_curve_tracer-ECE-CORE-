@@ -39,8 +39,8 @@ def get_target_file():
     tk.Label(root, text="Select the component in the Test Socket:", font=("Segoe UI", 11)).pack(pady=20)
     btn_frame = tk.Frame(root)
     btn_frame.pack()
-    tk.Button(btn_frame, text="BJT (2N3904)", command=choose_bjt, width=15, bg="#007acc", fg="white").pack(side=tk.LEFT, padx=10)
-    tk.Button(btn_frame, text="MOSFET", command=choose_mosfet, width=15, bg="#d9534f", fg="white").pack(side=tk.RIGHT, padx=10)
+    tk.Button(btn_frame, text="Test BJT", command=choose_bjt, width=15, bg="#007acc", fg="white").pack(side=tk.LEFT, padx=10)
+    tk.Button(btn_frame, text="Test MOSFET", command=choose_mosfet, width=15, bg="#d9534f", fg="white").pack(side=tk.RIGHT, padx=10)
     root.mainloop()
     
     return selected_file, component_name, trigger_char

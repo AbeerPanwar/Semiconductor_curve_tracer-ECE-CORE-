@@ -13,6 +13,7 @@ class _TracerScreenState extends State<TracerScreen> {
   late WebSocketChannel channel;
   bool isConnected = false;
   String currentComponent = "Ready to Test";
+  String chartTitle = "Output Characteristics";
 
   // Store data points for the 5 curves
   final Map<int, List<FlSpot>> curveData = {1: [], 2: [], 3: [], 4: [], 5: []};
@@ -99,7 +100,10 @@ class _TracerScreenState extends State<TracerScreen> {
 
   void triggerSweep(String component, String command) {
     if (isConnected) {
-      setState(() => currentComponent = "Sweeping $component...");
+      setState(() {
+        currentComponent = "Sweeping $component...";
+        chartTitle = "$component Output Characteristics";
+      });
       channel.sink.add(command);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -122,6 +126,7 @@ class _TracerScreenState extends State<TracerScreen> {
     setState(() {
       isConnected = false;
       currentComponent = "Ready to Test";
+      chartTitle = "Output Characteristics";
       for (var key in curveData.keys) {
         curveData[key]!.clear();
       }
@@ -172,8 +177,8 @@ class _TracerScreenState extends State<TracerScreen> {
                 children: [
                   Column(
                     children: [
-                      const Text(
-                        "BJT Output Characteristics",
+                      Text(
+                        chartTitle,
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 18,
